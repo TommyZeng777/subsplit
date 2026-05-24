@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#058980" />
+    <meta name="description" content="Subsplit 是一个纯前端订阅拼车费用分摊计算器，支持多币种、权益池、号主责任调节和公约导出。" />
+    <title>Subsplit 拼车分摊计算器</title>
+    <link rel="icon" href="favicon.svg?v=20260524-2" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="favicon.svg?v=20260524-2" />
+    <link rel="stylesheet" href="styles.css?v=20260524-2" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M6.6 17.2h10.8m-9.7-4.6h8.6m-11 4.6-1.1 2.1m15.6 0-1.1-2.1M5 17.2l1-7.1c.2-1.5 1.5-2.6 3-2.6h6c1.5 0 2.8 1.1 3 2.6l1 7.1M8.2 7.5l.7-2.1h6.2l.7 2.1M7.5 14.5h.1m8.8 0h.1" />
+            </svg>
+          </div>
+          <div>
+            <h1>拼车分摊计算器</h1>
+            <p>人民币为主货币，支持多币种费用和多权益权重分摊</p>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="icon-button" id="refreshRates" type="button" title="刷新汇率">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0-14.1-4.9L4 8m0-4v4h4m-4 5a8.1 8.1 0 0 0 14.1 4.9L20 16m0 4v-4h-4" /></svg>
+            刷新汇率
+          </button>
+          <button class="icon-button" id="exportCsv" type="button" title="导出结果">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>
+            CSV
+          </button>
+          <button class="icon-button" id="exportNotice" type="button" title="导出 PDF 公约">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h7l4 4v12H7zM14 4v5h5M10 13h6M10 17h6" /></svg>
+            PDF公约
+          </button>
+          <button class="icon-button subtle" id="resetDemo" type="button" title="恢复示例">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10a6 6 0 1 1-5.7 7.9M4 7l3-3M4 7l3 3" /></svg>
+            示例
+          </button>
+        </div>
+      </header>
+
+      <section class="setup-panel panel" aria-labelledby="setupTitle">
+        <div class="panel-head">
+          <div>
+            <h2 id="setupTitle">购买配置</h2>
+            <p>先记录支付页标价；如有充值卡、手续费等实际花销，可直接填写号主总成本</p>
+          </div>
+          <strong id="setupConverted">¥ 0.00</strong>
+        </div>
+        <div class="setup-grid">
+          <label>
+            <span>购买地区</span>
+            <select id="regionSelect"></select>
+          </label>
+          <label>
+            <span>套餐参考</span>
+            <select id="planSelect"></select>
+          </label>
+          <label>
+            <span>结算金额</span>
+            <input id="purchaseAmount" type="number" min="0" step="0.01" />
+          </label>
+          <label>
+            <span>结算货币</span>
+            <select id="purchaseCurrency"></select>
+          </label>
+          <label>
+            <span>号主总成本（人民币，可空）</span>
+            <input id="purchaseTotalCost" type="number" min="0" step="0.01" placeholder="空着则按汇率换算" />
+          </label>
+          <label>
+            <span>租期类型</span>
+            <select id="rentalType">
+              <option value="monthly">月租拼</option>
+              <option value="yearly">年租拼</option>
+            </select>
+          </label>
+          <label>
+            <span>开通日期</span>
+            <input id="rentalStartDate" type="date" />
+          </label>
+          <label>
+            <span>续费 / 到期日期</span>
+            <input id="rentalEndDate" class="readonly-field" type="text" readonly />
+          </label>
+          <button class="primary-button" id="applyPurchase" type="button">写入费用</button>
+        </div>
+        <div class="reference-list" id="priceReferences"></div>
+      </section>
+
+      <section class="summary-strip" aria-label="分摊摘要">
+        <div>
+          <span>总费用</span>
+          <strong id="summaryTotal">¥ 0.00</strong>
+        </div>
+        <div>
+          <span>权益池</span>
+          <strong id="summaryPools">0 个</strong>
+        </div>
+        <div>
+          <span>成员</span>
+          <strong id="summaryMembers">0 人</strong>
+        </div>
+        <div>
+          <span>权重校验</span>
+          <strong id="summaryValid">待校验</strong>
+        </div>
+      </section>
+
+      <section class="guidance-panel panel" aria-labelledby="guidanceTitle">
+        <div class="panel-head">
+          <div>
+            <h2 id="guidanceTitle">拼车参考</h2>
+            <p>推荐 Codex 权益池不超过 3 人，网页端不超过 3 人，理想总人数为 4 人</p>
+          </div>
+          <strong id="guidanceStatus">待检查</strong>
+        </div>
+        <div class="guidance-grid" id="guidanceCards"></div>
+      </section>
+
+      <details class="panel collapsible-panel cost-panel" aria-labelledby="costTitle">
+        <summary class="panel-head">
+          <div>
+            <h2 id="costTitle">费用输入</h2>
+            <p>汇率按最新公开数据刷新，费用明细可展开核对</p>
+          </div>
+          <span class="rate-note" id="rateUpdated">等待刷新汇率</span>
+        </summary>
+
+        <div class="rate-grid" id="rates"></div>
+
+        <div class="section-head">
+          <h3>费用项目</h3>
+          <button class="mini-button" id="addExpense" type="button">添加费用</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>项目</th>
+                <th>金额</th>
+                <th>币种</th>
+                <th>折合人民币</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="expenseRows"></tbody>
+          </table>
+        </div>
+      </details>
+
+      <section class="workspace">
+
+        <section class="panel" aria-labelledby="poolTitle">
+          <div class="panel-head">
+            <div>
+              <h2 id="poolTitle">权益池设置</h2>
+              <p>权重总和建议为 100%，每个池由使用者平分</p>
+            </div>
+            <strong class="weight-pill" id="weightPill">0%</strong>
+          </div>
+
+          <div id="poolRows" class="pool-list"></div>
+          <button class="wide-dashed" id="addPool" type="button">添加权益池</button>
+
+          <div class="owner-box" aria-labelledby="ownerTitle">
+            <div class="section-head compact">
+              <div>
+                <h3 id="ownerTitle">号主责任调节</h3>
+                <p>责任补偿按 - 标注，控制权收益按 + 标注，表示对号主应付金额的影响</p>
+              </div>
+            </div>
+            <div class="owner-grid">
+              <label>
+                <span>号主</span>
+                <select id="ownerSelect"></select>
+              </label>
+              <label>
+                <span>责任补偿 -</span>
+                <input id="ownerResponsibility" type="number" min="0" max="50" step="0.5" />
+              </label>
+              <label>
+                <span>控制权收益 +</span>
+                <input id="ownerControl" type="number" min="0" max="50" step="0.5" />
+              </label>
+            </div>
+            <div class="owner-meter">
+              <span id="ownerNetLabel">净调节 0%</span>
+              <strong id="ownerNetAmount">¥ 0.00</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel result-panel" aria-labelledby="memberTitle">
+          <div class="panel-head">
+            <div>
+              <h2 id="memberTitle">成员与分摊结果</h2>
+              <p>勾选成员实际使用的权益</p>
+            </div>
+            <button class="mini-button" id="addMember" type="button">添加成员</button>
+          </div>
+
+          <div class="table-wrap">
+            <table class="member-table">
+              <thead id="memberHead"></thead>
+              <tbody id="memberRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="breakdown panel" aria-labelledby="breakdownTitle">
+        <div class="panel-head">
+          <div>
+            <h2 id="breakdownTitle">公开计算过程</h2>
+            <p>用于给参与者核对：总价、权益池、单池人均和最终应付</p>
+          </div>
+          <strong id="checkStatus">等待计算</strong>
+        </div>
+        <div class="breakdown-grid">
+          <div class="formula-card">
+            <h3>1. 费用折算</h3>
+            <div id="expenseBreakdown"></div>
+          </div>
+          <div class="formula-card">
+            <h3>2. 权益池分配</h3>
+            <div id="poolBreakdown"></div>
+          </div>
+          <div class="formula-card">
+            <h3>3. 成员应付</h3>
+            <div id="memberBreakdown"></div>
+          </div>
+          <div class="formula-card total-card">
+            <h3>校验</h3>
+            <dl>
+              <div><dt>费用总额</dt><dd id="auditTotal">¥ 0.00</dd></div>
+              <div><dt>成员合计</dt><dd id="auditMembers">¥ 0.00</dd></div>
+              <div><dt>差额</dt><dd id="auditDiff">¥ 0.00</dd></div>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      <section class="agreement-panel panel" aria-labelledby="agreementTitle">
+        <div class="panel-head">
+          <div>
+            <h2 id="agreementTitle">拼车公约与公示</h2>
+            <p>按当前填写内容生成，并带生成时间与公约编号</p>
+          </div>
+          <button class="mini-button" id="copyNotice" type="button">复制公约</button>
+        </div>
+        <div id="agreementText" class="markdown-preview" aria-label="拼车公约 Markdown 预览"></div>
+      </section>
+    </main>
+
+    <script src="app.js?v=20260524-2"></script>
+  </body>
+</html>
